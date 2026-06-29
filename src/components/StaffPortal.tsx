@@ -26,10 +26,15 @@ import {
   Users,
   LogOut,
   Upload,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Database,
+  RefreshCw,
+  Copy,
+  Check
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Product, Voucher, ShippingMethod, Order, ProductOption } from "../types";
+import { SUPABASE_SQL_SETUP } from "../supabaseClient";
 
 interface StaffPortalProps {
   products: Product[];
@@ -52,6 +57,10 @@ interface StaffPortalProps {
   onLogoutStaff?: () => void;
   staffIds?: string[];
   registerStaffId?: (id: string) => { success: boolean; error?: string };
+  supabaseStatus?: Record<string, "synced" | "missing" | "error" | "loading">;
+  isSyncing?: boolean;
+  syncError?: string | null;
+  syncFromSupabase?: () => Promise<void>;
 }
 
 export default function StaffPortal({
@@ -74,10 +83,17 @@ export default function StaffPortal({
   authenticatedStaffId = "",
   onLogoutStaff = () => {},
   staffIds = [],
-  registerStaffId = () => ({ success: false, error: "Not configured" })
+  registerStaffId = () => ({ success: false, error: "Not configured" }),
+  supabaseStatus = {},
+  isSyncing = false,
+  syncError = null,
+  syncFromSupabase = async () => {}
 }: StaffPortalProps) {
   // --- Tab State ---
-  const [activeTab, setActiveTab] = useState<"orders" | "products" | "vouchers" | "shipping" | "staff-ids">("orders");
+  const [activeTab, setActiveTab] = useState<"orders" | "products" | "vouchers" | "shipping" | "staff-ids" | "supabase">("orders");
+
+  // --- SQL Copy State ---
+  const [sqlCopied, setSqlCopied] = useState(false);
 
   // --- Staff Registration Form State ---
   const [newStaffIdInput, setNewStaffIdInput] = useState("");
@@ -371,6 +387,15 @@ export default function StaffPortal({
               >
                 <Users className="h-3.5 w-3.5" />
                 <span>Staff IDs ({staffIds.length})</span>
+              </button>
+              <button
+                onClick={() => setActiveTab("supabase")}
+                className={`px-3 py-2 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === "supabase" ? "bg-accent-indigo text-white shadow-md shadow-accent-indigo/10" : "text-natural-muted hover:text-natural-text"
+                }`}
+              >
+                <Database className="h-3.5 w-3.5" />
+                <span>Supabase Sync</span>
               </button>
             </nav>
 
@@ -1057,6 +1082,150 @@ export default function StaffPortal({
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "supabase" && (
+          <div className="space-y-6" id="supabase-sync-management-root">
+            {/* Supabase Hero Panel */}
+            <div className="bg-radial from-accent-indigo/10 to-transparent border border-accent-indigo/20 p-6 rounded-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-8 opacity-5 select-none pointer-events-none">
+                <Database className="h-40 w-40 text-accent-indigo" />
+              </div>
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-serif font-black text-xl text-natural-text mb-1.5 flex items-center gap-2">
+                    <Database className="h-5 w-5 text-accent-indigo" />
+                    <span>Supabase Cloud Integration</span>
+                  </h3>
+                  <p className="text-natural-muted text-xs max-w-2xl leading-relaxed">
+                    Sistem ini menyegerakan semua barangan, tempahan, baucar, dan tetapan operator secara langsung ke akaun awan Supabase anda. Ini membolehkan telefon pintar, komputer riba, dan peranti lain sentiasa memaparkan data jualan yang sama secara waktu-nyata!
+                  </p>
+                </div>
+                <button
+                  onClick={async () => {
+                    await syncFromSupabase();
+                  }}
+                  disabled={isSyncing}
+                  className="bg-accent-indigo hover:bg-accent-indigo-hover text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
+                  <span>{isSyncing ? "Menyegerakan..." : "Segerak Sekarang"}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Connection and Table Status Row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Credentials Panel */}
+              <div className="bg-white p-5 rounded-2xl border border-natural-border shadow-xs">
+                <h4 className="font-serif font-bold text-sm text-natural-text mb-4">Maklumat Sambungan</h4>
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-natural-muted mb-1">Supabase Project URL</label>
+                    <div className="px-3 py-2 bg-natural-secondary border border-natural-border rounded-xl font-mono truncate text-natural-text">
+                      https://cffqsxyuddwsrpikhwmm.supabase.co
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-natural-muted mb-1">Anon / Public Key</label>
+                    <div className="px-3 py-2 bg-natural-secondary border border-natural-border rounded-xl font-mono truncate text-natural-text">
+                      sb_publishable_ukot...8W8ejg_HaJ9eVqN
+                    </div>
+                  </div>
+                  <div className="pt-2">
+                    <span className="inline-flex items-center gap-1.5 bg-sage/5 text-sage border border-sage/20 text-[10px] font-bold px-2.5 py-1 rounded-lg">
+                      <span className="h-1.5 w-1.5 bg-sage rounded-full animate-pulse"></span>
+                      Client Aktif & Bersedia
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tables Status Panel */}
+              <div className="md:col-span-2 bg-white p-5 rounded-2xl border border-natural-border shadow-xs">
+                <h4 className="font-serif font-bold text-sm text-natural-text mb-3">Status Segerak Jadual (Database Tables)</h4>
+                <p className="text-natural-muted text-xs mb-4">Jika anda melihat status <span className="text-terracotta font-semibold">"Jadual Hilang"</span>, ia bermakna jadual tersebut belum dicipta di Supabase. Sila salin kod SQL di bawah dan tampalkannya ke dalam Supabase SQL Editor anda.</p>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  {[
+                    { key: "products", label: "Barangan (styvex_products)" },
+                    { key: "vouchers", label: "Baucar (styvex_vouchers)" },
+                    { key: "shippingMethods", label: "Penghantaran (styvex_shipping_methods)" },
+                    { key: "orders", label: "Tempahan (styvex_orders)" },
+                    { key: "users", label: "Akaun Pelanggan (styvex_users)" },
+                    { key: "staffIds", label: "Kod Operator (styvex_staff_ids)" },
+                  ].map((table) => {
+                    const status = supabaseStatus[table.key] || "loading";
+                    return (
+                      <div key={table.key} className="p-3 bg-natural-secondary/30 border border-natural-border rounded-xl flex items-center justify-between">
+                        <span className="font-medium text-natural-text">{table.label}</span>
+                        {status === "loading" && (
+                          <span className="text-yellow-600 font-mono text-[10px] flex items-center gap-1">
+                            <span className="h-1.5 w-1.5 rounded-full bg-yellow-500 animate-pulse"></span>
+                            Loading...
+                          </span>
+                        )}
+                        {status === "synced" && (
+                          <span className="text-sage font-bold text-[10px] bg-sage/5 border border-sage/15 px-2 py-0.5 rounded-md flex items-center gap-1">
+                            <Check className="h-3 w-3" />
+                            Segerak
+                          </span>
+                        )}
+                        {status === "missing" && (
+                          <span className="text-terracotta font-bold text-[10px] bg-terracotta/5 border border-terracotta/15 px-2 py-0.5 rounded-md flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3" />
+                            Jadual Hilang
+                          </span>
+                        )}
+                        {status === "error" && (
+                          <span className="text-amber-600 font-bold text-[10px] bg-amber-500/5 border border-amber-500/15 px-2 py-0.5 rounded-md flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3" />
+                            Ralat
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* SQL Migration Setup Panel */}
+            <div className="bg-white rounded-2xl border border-natural-border overflow-hidden shadow-xs">
+              <div className="p-5 border-b border-natural-border bg-natural-secondary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-serif font-bold text-sm text-natural-text">Langkah Setup Database Supabase</h4>
+                  <p className="text-natural-muted text-xs">Salin dan jalankan script SQL ini di dashboard akaun Supabase anda untuk mencipta semua jadual yang diperlukan dalam satu klik.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(SUPABASE_SQL_SETUP);
+                    setSqlCopied(true);
+                    setTimeout(() => setSqlCopied(false), 2000);
+                  }}
+                  className="bg-natural-text hover:bg-natural-text/90 text-white px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 self-start cursor-pointer shadow-xs"
+                >
+                  {sqlCopied ? <Check className="h-3.5 w-3.5 text-sage" /> : <Copy className="h-3.5 w-3.5" />}
+                  <span>{sqlCopied ? "Berjaya Disalin!" : "Salin Kod SQL"}</span>
+                </button>
+              </div>
+              <div className="p-5 bg-natural-secondary/10">
+                <ol className="list-decimal list-inside text-xs text-natural-text space-y-2 mb-4 bg-white p-4 rounded-xl border border-natural-border">
+                  <li>Layari dashboard projek Supabase anda: <a href="https://supabase.com/dashboard/project/cffqsxyuddwsrpikhwmm" target="_blank" rel="noopener noreferrer" className="text-accent-indigo hover:underline font-bold">https://supabase.com/dashboard/project/cffqsxyuddwsrpikhwmm</a></li>
+                  <li>Klik pada tab <strong>SQL Editor</strong> di panel sebelah kiri dashboard Supabase.</li>
+                  <li>Klik <strong>New query</strong> (Butang Query Baru).</li>
+                  <li>Klik butang <strong>"Salin Kod SQL"</strong> di atas, tampalkannya (Paste) ke dalam SQL Editor di Supabase.</li>
+                  <li>Tekan butang <strong>"Run"</strong> di bahagian bawah kanan panel Supabase.</li>
+                  <li>Selesai! Tekan butang <strong>"Segerak Sekarang"</strong> di atas panel ini untuk menyegerakan semua maklumat kedai!</li>
+                </ol>
+                <div className="relative">
+                  <pre className="text-[10px] font-mono bg-natural-text text-natural-secondary p-4 rounded-xl overflow-x-auto max-h-80 leading-relaxed border border-natural-muted/20 select-all">
+                    {SUPABASE_SQL_SETUP}
+                  </pre>
+                </div>
               </div>
             </div>
           </div>

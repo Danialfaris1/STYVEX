@@ -113,6 +113,10 @@ export default function App() {
             onLogoutStaff={() => setAuthenticatedStaffId(null)}
             staffIds={state.staffIds}
             registerStaffId={state.registerStaffId}
+            supabaseStatus={state.supabaseStatus}
+            isSyncing={state.isSyncing}
+            syncError={state.syncError}
+            syncFromSupabase={state.syncFromSupabase}
           />
         )}
       </div>
