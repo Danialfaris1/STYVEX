@@ -1157,6 +1157,7 @@ export default function StaffPortal({
                     { key: "orders", label: "Tempahan (styvex_orders)" },
                     { key: "users", label: "Akaun Pelanggan (styvex_users)" },
                     { key: "staffIds", label: "Kod Operator (styvex_staff_ids)" },
+                    { key: "cart", label: "Troli Membeli-belah (styvex_cart)" },
                   ].map((table) => {
                     const status = supabaseStatus[table.key] || "loading";
                     return (

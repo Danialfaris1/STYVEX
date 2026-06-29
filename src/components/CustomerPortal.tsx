@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ShoppingBag,
   User as UserIcon,
@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Product, CartItem, Voucher, ShippingMethod, Order, User } from "../types";
+import { supabase, getCartItemId, mapCartItemToDB, mapCartItemFromDB } from "../supabaseClient";
 
 interface CustomerPortalProps {
   products: Product[];
@@ -40,6 +41,15 @@ interface CustomerPortalProps {
   setGuestSession: (name: string) => void;
   createOrder: (order: Omit<Order, "id" | "customerCode" | "createdAt" | "status">) => Order;
 }
+
+const getSessionId = (): string => {
+  let sessId = localStorage.getItem("styvex_session_id");
+  if (!sessId) {
+    sessId = "sess-" + Math.random().toString(36).substring(2, 11);
+    localStorage.setItem("styvex_session_id", sessId);
+  }
+  return sessId;
+};
 
 export default function CustomerPortal({
   products,
@@ -60,6 +70,29 @@ export default function CustomerPortal({
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<"shop" | "track">("shop");
+
+  // Load cart from Supabase on mount / auth change
+  useEffect(() => {
+    const fetchCart = async () => {
+      try {
+        const ownerId = currentUser ? currentUser.id : getSessionId();
+        const { data, error } = await supabase
+          .from("styvex_cart")
+          .select("*")
+          .eq("session_id", ownerId);
+        if (error) {
+          console.warn("styvex_cart table might not exist yet, using in-memory cart fallback.", error);
+          return;
+        }
+        if (data) {
+          setCart(data.map(mapCartItemFromDB));
+        }
+      } catch (err) {
+        console.error("Failed to load cart from Supabase:", err);
+      }
+    };
+    fetchCart();
+  }, [currentUser]);
 
   // --- Auth Dialog State ---
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
@@ -128,21 +161,29 @@ export default function CustomerPortal({
   };
 
   // Add to cart helper
-  const handleAddToCart = (product: Product) => {
+  const handleAddToCart = async (product: Product) => {
     // Check if options are fully selected (they should be, initialized above)
     const optionsKey = JSON.stringify(selectedOptions);
     const existingIndex = cart.findIndex(
       (item) => item.productId === product.id && JSON.stringify(item.selectedOptions) === optionsKey
     );
 
+    const ownerId = currentUser ? currentUser.id : getSessionId();
+    let newQuantity = 1;
+    let itemToSave: CartItem;
+
     if (existingIndex > -1) {
-      const updatedCart = [...cart];
-      if (updatedCart[existingIndex].quantity < product.stock) {
-        updatedCart[existingIndex].quantity += 1;
-        setCart(updatedCart);
+      if (cart[existingIndex].quantity < product.stock) {
+        newQuantity = cart[existingIndex].quantity + 1;
+        itemToSave = {
+          ...cart[existingIndex],
+          quantity: newQuantity
+        };
+      } else {
+        return; // Stock limit reached
       }
     } else {
-      const newItem: CartItem = {
+      itemToSave = {
         productId: product.id,
         name: product.name,
         price: product.price,
@@ -151,7 +192,24 @@ export default function CustomerPortal({
         quantity: 1,
         maxStock: product.stock
       };
-      setCart([...cart, newItem]);
+    }
+
+    // 1. Optimistic local state update
+    if (existingIndex > -1) {
+      const updatedCart = [...cart];
+      updatedCart[existingIndex].quantity = newQuantity;
+      setCart(updatedCart);
+    } else {
+      setCart([...cart, itemToSave]);
+    }
+
+    // 2. Direct Supabase insert / upsert operation
+    try {
+      const dbRow = mapCartItemToDB(itemToSave, ownerId);
+      const { error } = await supabase.from("styvex_cart").upsert(dbRow);
+      if (error) throw error;
+    } catch (err) {
+      console.error("Failed to save cart item to Supabase:", err);
     }
 
     setIsCartOpen(true);
@@ -159,15 +217,42 @@ export default function CustomerPortal({
   };
 
   // Cart quantity adjustment
-  const updateCartQuantity = (index: number, change: number) => {
-    const updated = [...cart];
-    const newQty = updated[index].quantity + change;
+  const updateCartQuantity = async (index: number, change: number) => {
+    const item = cart[index];
+    if (!item) return;
+
+    const newQty = item.quantity + change;
+    const ownerId = currentUser ? currentUser.id : getSessionId();
+    const itemId = getCartItemId(ownerId, item.productId, item.selectedOptions);
+
     if (newQty <= 0) {
-      updated.splice(index, 1);
-    } else if (newQty <= updated[index].maxStock) {
+      // 1. Optimistic delete
+      const updated = cart.filter((_, idx) => idx !== index);
+      setCart(updated);
+
+      // 2. Direct delete from Supabase
+      try {
+        const { error } = await supabase.from("styvex_cart").delete().eq("id", itemId);
+        if (error) throw error;
+      } catch (err) {
+        console.error("Failed to delete cart item from Supabase:", err);
+      }
+    } else if (newQty <= item.maxStock) {
+      // 1. Optimistic update
+      const updated = [...cart];
       updated[index].quantity = newQty;
+      setCart(updated);
+
+      // 2. Direct update to Supabase
+      try {
+        const updatedItem = { ...item, quantity: newQty };
+        const dbRow = mapCartItemToDB(updatedItem, ownerId);
+        const { error } = await supabase.from("styvex_cart").upsert(dbRow);
+        if (error) throw error;
+      } catch (err) {
+        console.error("Failed to update cart item in Supabase:", err);
+      }
     }
-    setCart(updated);
   };
 
   // --- Auth Execution ---
@@ -315,7 +400,7 @@ export default function CustomerPortal({
   const total = subtotal - discount + shippingFee;
 
   // Complete checkout process
-  const submitCheckout = (e: React.FormEvent) => {
+  const submitCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     setCheckoutError("");
 
@@ -367,6 +452,18 @@ export default function CustomerPortal({
     const finalOrder = createOrder(orderData);
     setLastPlacedOrder(finalOrder);
     setCart([]);
+
+    // Clear Supabase cart for this session/user
+    try {
+      const ownerId = currentUser ? currentUser.id : getSessionId();
+      const { error } = await supabase.from("styvex_cart").delete().eq("session_id", ownerId);
+      if (error) {
+        console.error("Failed to clear Supabase cart after order:", error);
+      }
+    } catch (err) {
+      console.error("Error clearing Supabase cart after order:", err);
+    }
+
     setAppliedVoucher(null);
     setVoucherCodeInput("");
     setCheckoutStep("success");

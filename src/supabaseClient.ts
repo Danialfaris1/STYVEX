@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { Product, Voucher, ShippingMethod, Order, User } from "./types";
+import { Product, Voucher, ShippingMethod, Order, User, CartItem } from "./types";
 
 // User provided credentials
 const DEFAULT_SUPABASE_URL = "https://cffqsxyuddwsrpikhwmm.supabase.co";
@@ -84,6 +84,19 @@ create table if not exists styvex_staff_ids (
   staff_id text primary key
 );
 
+-- 7. Create Cart Table (Saves shopping cart items for real-time multi-device sync)
+create table if not exists styvex_cart (
+  id text primary key,
+  session_id text not null,
+  product_id text not null,
+  name text not null,
+  price numeric not null,
+  image_url text not null,
+  selected_options jsonb not null default '{}'::jsonb,
+  quantity integer not null,
+  max_stock integer not null
+);
+
 -- Enable Row Level Security (RLS) or disable for simple anon access
 -- In Supabase, newly created tables have RLS enabled by default, or disabled depending on settings.
 -- To allow public client-side sync without complex Auth rules, we can disable RLS or create a general allow policy.
@@ -93,6 +106,7 @@ alter table styvex_shipping_methods disable row level security;
 alter table styvex_users disable row level security;
 alter table styvex_orders disable row level security;
 alter table styvex_staff_ids disable row level security;
+alter table styvex_cart disable row level security;
 
 -- Insert Default Staff ID
 insert into styvex_staff_ids (staff_id) values ('585355') on conflict (staff_id) do nothing;
@@ -237,3 +251,39 @@ export function mapOrderFromDB(db: any): Order {
     status: db.status as "pending" | "processing" | "completed" | "cancelled",
   };
 }
+
+export function getCartItemId(sessionId: string, productId: string, selectedOptions: Record<string, string>) {
+  const optionsString = Object.entries(selectedOptions || {})
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([k, v]) => `${k}:${v}`)
+    .join(",");
+  return `${sessionId}_${productId}_${optionsString}`;
+}
+
+export function mapCartItemToDB(item: CartItem, sessionId: string) {
+  const itemId = getCartItemId(sessionId, item.productId, item.selectedOptions);
+  return {
+    id: itemId,
+    session_id: sessionId,
+    product_id: item.productId,
+    name: item.name,
+    price: item.price,
+    image_url: item.imageUrl,
+    selected_options: item.selectedOptions,
+    quantity: item.quantity,
+    max_stock: item.maxStock,
+  };
+}
+
+export function mapCartItemFromDB(db: any): CartItem {
+  return {
+    productId: db.product_id,
+    name: db.name,
+    price: Number(db.price),
+    imageUrl: db.image_url,
+    selectedOptions: typeof db.selected_options === "object" && db.selected_options !== null ? db.selected_options : {},
+    quantity: Number(db.quantity),
+    maxStock: Number(db.max_stock),
+  };
+}
+

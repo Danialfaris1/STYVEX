@@ -38,6 +38,7 @@ export function useAppState() {
     orders: "loading",
     users: "loading",
     staffIds: "loading",
+    cart: "loading",
   });
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -179,6 +180,16 @@ export function useAppState() {
       newStatus.staffIds = err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error";
       const stored = localStorage.getItem("store_staff_ids");
       setStaffIds(stored ? JSON.parse(stored) : ["585355"]);
+    }
+
+    // 7. Cart Table Sync Status Check
+    try {
+      const { error } = await supabase.from("styvex_cart").select("id").limit(1);
+      if (error) throw error;
+      newStatus.cart = "synced";
+    } catch (err: any) {
+      console.warn("Supabase cart table status check failed:", err);
+      newStatus.cart = err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error";
     }
 
     setSupabaseStatus(newStatus);
