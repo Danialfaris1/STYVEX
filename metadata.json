@@ -1,0 +1,6 @@
+{
+  "name": "E-Commerce Customer and Staff Portal",
+  "description": "A comprehensive online store featuring a customer portal with registration, login, cart, voucher redemption, and guest checkout alongside a staff management portal for stock, items, options, shipping methods, and order tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
