@@ -76,21 +76,8 @@ export function useAppState() {
     }
   };
 
-  // Sync from Supabase
-  const syncFromSupabase = async () => {
-    setIsSyncing(true);
-    setSyncError(null);
-    const newStatus = { ...supabaseStatus };
-
-    // 1. Products Sync
-    try {
-      await getProducts();
-      newStatus.products = "synced";
-    } catch (err) {
-      newStatus.products = "error";
-    }
-
-    // 2. Vouchers Sync
+  // Get vouchers directly from Supabase
+  const getVouchers = async (): Promise<Voucher[]> => {
     try {
       const { data, error } = await supabase.from("styvex_vouchers").select("*");
       if (error) throw error;
@@ -98,22 +85,32 @@ export function useAppState() {
         const mapped = data.map(mapVoucherFromDB);
         setVouchers(mapped);
         localStorage.setItem("store_vouchers", JSON.stringify(mapped));
+        setSupabaseStatus((prev) => ({ ...prev, vouchers: "synced" }));
+        return mapped;
       } else {
         const local = localStorage.getItem("store_vouchers")
           ? JSON.parse(localStorage.getItem("store_vouchers")!)
           : INITIAL_VOUCHERS;
         setVouchers(local);
         await supabase.from("styvex_vouchers").upsert(local.map(mapVoucherToDB));
+        setSupabaseStatus((prev) => ({ ...prev, vouchers: "synced" }));
+        return local;
       }
-      newStatus.vouchers = "synced";
     } catch (err: any) {
       console.warn("Supabase vouchers fetch failed:", err);
-      newStatus.vouchers = err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error";
+      setSupabaseStatus((prev) => ({
+        ...prev,
+        vouchers: err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error"
+      }));
       const stored = localStorage.getItem("store_vouchers");
-      setVouchers(stored ? JSON.parse(stored) : INITIAL_VOUCHERS);
+      const loaded = stored ? JSON.parse(stored) : INITIAL_VOUCHERS;
+      setVouchers(loaded);
+      return loaded;
     }
+  };
 
-    // 3. Shipping Sync
+  // Get shipping methods directly from Supabase
+  const getShippingMethods = async (): Promise<ShippingMethod[]> => {
     try {
       const { data, error } = await supabase.from("styvex_shipping_methods").select("*");
       if (error) throw error;
@@ -121,22 +118,32 @@ export function useAppState() {
         const mapped = data.map(mapShippingFromDB);
         setShippingMethods(mapped);
         localStorage.setItem("store_shipping", JSON.stringify(mapped));
+        setSupabaseStatus((prev) => ({ ...prev, shippingMethods: "synced" }));
+        return mapped;
       } else {
         const local = localStorage.getItem("store_shipping")
           ? JSON.parse(localStorage.getItem("store_shipping")!)
           : INITIAL_SHIPPING;
         setShippingMethods(local);
         await supabase.from("styvex_shipping_methods").upsert(local.map(mapShippingToDB));
+        setSupabaseStatus((prev) => ({ ...prev, shippingMethods: "synced" }));
+        return local;
       }
-      newStatus.shippingMethods = "synced";
     } catch (err: any) {
       console.warn("Supabase shipping fetch failed:", err);
-      newStatus.shippingMethods = err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error";
+      setSupabaseStatus((prev) => ({
+        ...prev,
+        shippingMethods: err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error"
+      }));
       const stored = localStorage.getItem("store_shipping");
-      setShippingMethods(stored ? JSON.parse(stored) : INITIAL_SHIPPING);
+      const loaded = stored ? JSON.parse(stored) : INITIAL_SHIPPING;
+      setShippingMethods(loaded);
+      return loaded;
     }
+  };
 
-    // 4. Orders Sync
+  // Get orders directly from Supabase
+  const getOrders = async (): Promise<Order[]> => {
     try {
       const { data, error } = await supabase.from("styvex_orders").select("*");
       if (error) throw error;
@@ -145,19 +152,30 @@ export function useAppState() {
         mapped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setOrders(mapped);
         localStorage.setItem("store_orders", JSON.stringify(mapped));
+        setSupabaseStatus((prev) => ({ ...prev, orders: "synced" }));
+        return mapped;
       } else {
         const stored = localStorage.getItem("store_orders");
-        setOrders(stored ? JSON.parse(stored) : []);
+        const loaded = stored ? JSON.parse(stored) : [];
+        setOrders(loaded);
+        setSupabaseStatus((prev) => ({ ...prev, orders: "synced" }));
+        return loaded;
       }
-      newStatus.orders = "synced";
     } catch (err: any) {
       console.warn("Supabase orders fetch failed:", err);
-      newStatus.orders = err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error";
+      setSupabaseStatus((prev) => ({
+        ...prev,
+        orders: err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error"
+      }));
       const stored = localStorage.getItem("store_orders");
-      setOrders(stored ? JSON.parse(stored) : []);
+      const loaded = stored ? JSON.parse(stored) : [];
+      setOrders(loaded);
+      return loaded;
     }
+  };
 
-    // 5. Users Sync
+  // Get users directly from Supabase
+  const getUsers = async (): Promise<User[]> => {
     try {
       const { data, error } = await supabase.from("styvex_users").select("*");
       if (error) throw error;
@@ -165,19 +183,30 @@ export function useAppState() {
         const mapped = data.map(mapUserFromDB);
         setUsers(mapped);
         localStorage.setItem("store_users", JSON.stringify(mapped));
+        setSupabaseStatus((prev) => ({ ...prev, users: "synced" }));
+        return mapped;
       } else {
         const stored = localStorage.getItem("store_users");
-        setUsers(stored ? JSON.parse(stored) : []);
+        const loaded = stored ? JSON.parse(stored) : [];
+        setUsers(loaded);
+        setSupabaseStatus((prev) => ({ ...prev, users: "synced" }));
+        return loaded;
       }
-      newStatus.users = "synced";
     } catch (err: any) {
       console.warn("Supabase users fetch failed:", err);
-      newStatus.users = err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error";
+      setSupabaseStatus((prev) => ({
+        ...prev,
+        users: err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error"
+      }));
       const stored = localStorage.getItem("store_users");
-      setUsers(stored ? JSON.parse(stored) : []);
+      const loaded = stored ? JSON.parse(stored) : [];
+      setUsers(loaded);
+      return loaded;
     }
+  };
 
-    // 6. Staff IDs Sync
+  // Get staff IDs directly from Supabase
+  const getStaffIds = async (): Promise<string[]> => {
     try {
       const { data, error } = await supabase.from("styvex_staff_ids").select("*");
       if (error) throw error;
@@ -185,32 +214,64 @@ export function useAppState() {
         const ids = data.map((d) => d.staff_id);
         setStaffIds(ids);
         localStorage.setItem("store_staff_ids", JSON.stringify(ids));
+        setSupabaseStatus((prev) => ({ ...prev, staffIds: "synced" }));
+        return ids;
       } else {
         const defaultIds = ["585355"];
         setStaffIds(defaultIds);
         localStorage.setItem("store_staff_ids", JSON.stringify(defaultIds));
         await supabase.from("styvex_staff_ids").upsert([{ staff_id: "585355" }]);
+        setSupabaseStatus((prev) => ({ ...prev, staffIds: "synced" }));
+        return defaultIds;
       }
-      newStatus.staffIds = "synced";
     } catch (err: any) {
       console.warn("Supabase staffIds fetch failed:", err);
-      newStatus.staffIds = err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error";
+      setSupabaseStatus((prev) => ({
+        ...prev,
+        staffIds: err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error"
+      }));
       const stored = localStorage.getItem("store_staff_ids");
-      setStaffIds(stored ? JSON.parse(stored) : ["585355"]);
+      const loaded = stored ? JSON.parse(stored) : ["585355"];
+      setStaffIds(loaded);
+      return loaded;
     }
+  };
 
-    // 7. Cart Table Sync Status Check
+  // Check cart table status
+  const getCartStatus = async (): Promise<void> => {
     try {
       const { error } = await supabase.from("styvex_cart").select("id").limit(1);
       if (error) throw error;
-      newStatus.cart = "synced";
+      setSupabaseStatus((prev) => ({ ...prev, cart: "synced" }));
     } catch (err: any) {
       console.warn("Supabase cart table status check failed:", err);
-      newStatus.cart = err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error";
+      setSupabaseStatus((prev) => ({
+        ...prev,
+        cart: err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error"
+      }));
     }
+  };
 
-    setSupabaseStatus(newStatus);
-    setIsSyncing(false);
+  // Sync from Supabase
+  const syncFromSupabase = async () => {
+    setIsSyncing(true);
+    setSyncError(null);
+    try {
+      await Promise.all([
+        getProducts(),
+        getVouchers(),
+        getShippingMethods(),
+        getOrders(),
+        getUsers(),
+        getStaffIds(),
+        getCartStatus()
+      ]);
+    } catch (err: any) {
+      console.error("Full sync failed:", err);
+      setSyncError(err.message || "Gagal menyegerakkan data");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // Sync on mount and periodically to keep different devices in sync in real-time
@@ -222,12 +283,68 @@ export function useAppState() {
       setCurrentUser(JSON.parse(storedCurrentUser));
     }
 
-    // Set up background polling every 5 seconds to sync products, orders, and staff IDs in real-time
+    // Subscribe to Supabase Realtime postgres_changes events for all tables to sync clients instantly
+    const realtimeChannel = supabase
+      .channel("styvex_db_realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "styvex_products" },
+        async (payload) => {
+          console.log("Realtime product change received:", payload);
+          await getProducts();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "styvex_vouchers" },
+        async (payload) => {
+          console.log("Realtime voucher change received:", payload);
+          await getVouchers();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "styvex_shipping_methods" },
+        async (payload) => {
+          console.log("Realtime shipping change received:", payload);
+          await getShippingMethods();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "styvex_orders" },
+        async (payload) => {
+          console.log("Realtime order change received:", payload);
+          await getOrders();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "styvex_users" },
+        async (payload) => {
+          console.log("Realtime user change received:", payload);
+          await getUsers();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "styvex_staff_ids" },
+        async (payload) => {
+          console.log("Realtime staffId change received:", payload);
+          await getStaffIds();
+        }
+      )
+      .subscribe();
+
+    // Regular polling interval as a robust fallback every 15 seconds
     const interval = setInterval(() => {
       syncFromSupabase();
-    }, 5000);
+    }, 15000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(realtimeChannel);
+    };
   }, []);
 
   // --- Real-time Local & Supabase Savers ---
