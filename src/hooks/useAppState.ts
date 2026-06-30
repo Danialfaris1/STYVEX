@@ -43,6 +43,39 @@ export function useAppState() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
+  // Get products directly from Supabase
+  const getProducts = async (): Promise<Product[]> => {
+    try {
+      const { data, error } = await supabase.from("styvex_products").select("*");
+      if (error) throw error;
+      if (data && data.length > 0) {
+        const mapped = data.map(mapProductFromDB);
+        setProducts(mapped);
+        localStorage.setItem("store_products", JSON.stringify(mapped));
+        setSupabaseStatus((prev) => ({ ...prev, products: "synced" }));
+        return mapped;
+      } else {
+        const localProducts = localStorage.getItem("store_products")
+          ? JSON.parse(localStorage.getItem("store_products")!)
+          : INITIAL_PRODUCTS;
+        setProducts(localProducts);
+        await supabase.from("styvex_products").upsert(localProducts.map(mapProductToDB));
+        setSupabaseStatus((prev) => ({ ...prev, products: "synced" }));
+        return localProducts;
+      }
+    } catch (err: any) {
+      console.warn("Supabase products fetch failed:", err);
+      setSupabaseStatus((prev) => ({
+        ...prev,
+        products: err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error"
+      }));
+      const stored = localStorage.getItem("store_products");
+      const loaded = stored ? JSON.parse(stored) : INITIAL_PRODUCTS;
+      setProducts(loaded);
+      return loaded;
+    }
+  };
+
   // Sync from Supabase
   const syncFromSupabase = async () => {
     setIsSyncing(true);
@@ -51,26 +84,10 @@ export function useAppState() {
 
     // 1. Products Sync
     try {
-      const { data, error } = await supabase.from("styvex_products").select("*");
-      if (error) throw error;
-      if (data && data.length > 0) {
-        const mapped = data.map(mapProductFromDB);
-        setProducts(mapped);
-        localStorage.setItem("store_products", JSON.stringify(mapped));
-      } else {
-        // Empty table, pre-populate with INITIAL_PRODUCTS
-        const localProducts = localStorage.getItem("store_products")
-          ? JSON.parse(localStorage.getItem("store_products")!)
-          : INITIAL_PRODUCTS;
-        setProducts(localProducts);
-        await supabase.from("styvex_products").upsert(localProducts.map(mapProductToDB));
-      }
+      await getProducts();
       newStatus.products = "synced";
-    } catch (err: any) {
-      console.warn("Supabase products fetch failed:", err);
-      newStatus.products = err.code === "42P01" || err.message?.includes("does not exist") ? "missing" : "error";
-      const stored = localStorage.getItem("store_products");
-      setProducts(stored ? JSON.parse(stored) : INITIAL_PRODUCTS);
+    } catch (err) {
+      newStatus.products = "error";
     }
 
     // 2. Vouchers Sync
@@ -196,7 +213,7 @@ export function useAppState() {
     setIsSyncing(false);
   };
 
-  // Sync on mount
+  // Sync on mount and periodically to keep different devices in sync in real-time
   useEffect(() => {
     syncFromSupabase();
 
@@ -204,6 +221,13 @@ export function useAppState() {
     if (storedCurrentUser) {
       setCurrentUser(JSON.parse(storedCurrentUser));
     }
+
+    // Set up background polling every 5 seconds to sync products, orders, and staff IDs in real-time
+    const interval = setInterval(() => {
+      syncFromSupabase();
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, []);
 
   // --- Real-time Local & Supabase Savers ---
@@ -331,26 +355,65 @@ export function useAppState() {
   };
 
   // --- Staff: Product Actions ---
-  const addProduct = (p: Omit<Product, "id" | "status">) => {
+  const addProduct = async (p: Omit<Product, "id" | "status">): Promise<{ success: boolean; error?: string }> => {
     const newProduct: Product = {
       ...p,
       id: "prod-" + Math.random().toString(36).substr(2, 9),
       status: "active"
     };
-    saveProducts([...products, newProduct]);
+
+    try {
+      const { error } = await supabase.from("styvex_products").insert([mapProductToDB(newProduct)]);
+      if (error) throw error;
+      await getProducts();
+      return { success: true };
+    } catch (err: any) {
+      console.error("Failed to add product to Supabase:", err);
+      const updated = [...products, newProduct];
+      setProducts(updated);
+      localStorage.setItem("store_products", JSON.stringify(updated));
+      return { success: false, error: err.message || "Failed to add product." };
+    }
   };
 
-  const toggleProductStatus = (productId: string) => {
-    const updated = products.map((p) => {
-      if (p.id === productId) {
-        return {
-          ...p,
-          status: p.status === "active" ? ("rejected" as const) : ("active" as const)
-        };
-      }
-      return p;
-    });
-    saveProducts(updated);
+  const editProduct = async (updatedProduct: Product): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const { error } = await supabase
+        .from("styvex_products")
+        .update(mapProductToDB(updatedProduct))
+        .eq("id", updatedProduct.id);
+      if (error) throw error;
+      await getProducts();
+      return { success: true };
+    } catch (err: any) {
+      console.error("Failed to edit product on Supabase:", err);
+      const updated = products.map((p) => (p.id === updatedProduct.id ? updatedProduct : p));
+      setProducts(updated);
+      localStorage.setItem("store_products", JSON.stringify(updated));
+      return { success: false, error: err.message || "Failed to edit product." };
+    }
+  };
+
+  const toggleProductStatus = async (productId: string) => {
+    const found = products.find((p) => p.id === productId);
+    if (!found) return;
+    const updatedStatus = found.status === "active" ? ("rejected" as const) : ("active" as const);
+    const updatedProduct = { ...found, status: updatedStatus };
+
+    const updatedList = products.map((p) => (p.id === productId ? updatedProduct : p));
+    setProducts(updatedList);
+    localStorage.setItem("store_products", JSON.stringify(updatedList));
+
+    try {
+      const { error } = await supabase
+        .from("styvex_products")
+        .update({ status: updatedStatus })
+        .eq("id", productId);
+      if (error) throw error;
+      await getProducts();
+    } catch (err) {
+      console.error("Failed to toggle product status on Supabase:", err);
+    }
   };
 
   const deleteProduct = async (productId: string) => {
@@ -360,46 +423,77 @@ export function useAppState() {
     try {
       const { error } = await supabase.from("styvex_products").delete().eq("id", productId);
       if (error) throw error;
+      await getProducts();
     } catch (err) {
       console.error("Failed to delete product from Supabase:", err);
     }
   };
 
-  const updateProductStock = (productId: string, newStock: number) => {
-    const updated = products.map((p) => {
-      if (p.id === productId) {
-        return { ...p, stock: Math.max(0, newStock) };
-      }
-      return p;
-    });
-    saveProducts(updated);
+  const updateProductStock = async (productId: string, newStock: number) => {
+    const found = products.find((p) => p.id === productId);
+    if (!found) return;
+    const updatedStock = Math.max(0, newStock);
+    const updatedProduct = { ...found, stock: updatedStock };
+
+    const updatedList = products.map((p) => (p.id === productId ? updatedProduct : p));
+    setProducts(updatedList);
+    localStorage.setItem("store_products", JSON.stringify(updatedList));
+
+    try {
+      const { error } = await supabase
+        .from("styvex_products")
+        .update({ stock: updatedStock })
+        .eq("id", productId);
+      if (error) throw error;
+      await getProducts();
+    } catch (err) {
+      console.error("Failed to update product stock on Supabase:", err);
+    }
   };
 
-  const addOptionToProduct = (productId: string, option: ProductOption) => {
-    const updated = products.map((p) => {
-      if (p.id === productId) {
-        const filteredOptions = p.options.filter((o) => o.name.toLowerCase() !== option.name.toLowerCase());
-        return {
-          ...p,
-          options: [...filteredOptions, option]
-        };
-      }
-      return p;
-    });
-    saveProducts(updated);
+  const addOptionToProduct = async (productId: string, option: ProductOption) => {
+    const found = products.find((p) => p.id === productId);
+    if (!found) return;
+    const filteredOptions = found.options.filter((o) => o.name.toLowerCase() !== option.name.toLowerCase());
+    const updatedOptions = [...filteredOptions, option];
+    const updatedProduct = { ...found, options: updatedOptions };
+
+    const updatedList = products.map((p) => (p.id === productId ? updatedProduct : p));
+    setProducts(updatedList);
+    localStorage.setItem("store_products", JSON.stringify(updatedList));
+
+    try {
+      const { error } = await supabase
+        .from("styvex_products")
+        .update({ options: updatedOptions })
+        .eq("id", productId);
+      if (error) throw error;
+      await getProducts();
+    } catch (err) {
+      console.error("Failed to add option to product on Supabase:", err);
+    }
   };
 
-  const removeOptionFromProduct = (productId: string, optionName: string) => {
-    const updated = products.map((p) => {
-      if (p.id === productId) {
-        return {
-          ...p,
-          options: p.options.filter((o) => o.name !== optionName)
-        };
-      }
-      return p;
-    });
-    saveProducts(updated);
+  const removeOptionFromProduct = async (productId: string, optionName: string) => {
+    const found = products.find((p) => p.id === productId);
+    if (!found) return;
+    const updatedOptions = found.options.filter((o) => o.name !== optionName);
+    const updatedProduct = { ...found, options: updatedOptions };
+
+    const updatedList = products.map((p) => (p.id === productId ? updatedProduct : p));
+    setProducts(updatedList);
+    localStorage.setItem("store_products", JSON.stringify(updatedList));
+
+    try {
+      const { error } = await supabase
+        .from("styvex_products")
+        .update({ options: updatedOptions })
+        .eq("id", productId);
+      if (error) throw error;
+      await getProducts();
+    } catch (err) {
+      console.error("Failed to remove option from product on Supabase:", err);
+    }
   };
 
   // --- Staff: Voucher Actions ---
@@ -460,19 +554,22 @@ export function useAppState() {
       status: "pending"
     };
 
-    // Deduct stock for products bought
-    const updatedProducts = products.map((p) => {
-      const orderItem = orderData.items.find((item) => item.productId === p.id);
-      if (orderItem) {
-        return {
-          ...p,
-          stock: Math.max(0, p.stock - orderItem.quantity)
-        };
+    // Deduct stock for products bought (run individually on Supabase instead of upserting entire array)
+    (async () => {
+      try {
+        for (const item of orderData.items) {
+          const prod = products.find((p) => p.id === item.productId);
+          if (prod) {
+            const newStock = Math.max(0, prod.stock - item.quantity);
+            await supabase.from("styvex_products").update({ stock: newStock }).eq("id", prod.id);
+          }
+        }
+        await getProducts();
+      } catch (err) {
+        console.error("Failed to deduct stock for created order items:", err);
       }
-      return p;
-    });
+    })();
 
-    saveProducts(updatedProducts);
     saveOrders([newOrder, ...orders]); // newest first
     return newOrder;
   };
@@ -481,14 +578,21 @@ export function useAppState() {
     const updated = orders.map((o) => {
       if (o.id === orderId) {
         if (status === "cancelled" && o.status !== "cancelled") {
-          const updatedProducts = products.map((p) => {
-            const orderItem = o.items.find((item) => item.productId === p.id);
-            if (orderItem) {
-              return { ...p, stock: p.stock + orderItem.quantity };
+          // Refund stock for products (run individually on Supabase)
+          (async () => {
+            try {
+              for (const item of o.items) {
+                const prod = products.find((p) => p.id === item.productId);
+                if (prod) {
+                  const newStock = prod.stock + item.quantity;
+                  await supabase.from("styvex_products").update({ stock: newStock }).eq("id", prod.id);
+                }
+              }
+              await getProducts();
+            } catch (err) {
+              console.error("Failed to refund stock for cancelled order items:", err);
             }
-            return p;
-          });
-          saveProducts(updatedProducts);
+          })();
         }
         return { ...o, status };
       }
@@ -589,6 +693,7 @@ export function useAppState() {
 
   return {
     products,
+    getProducts,
     vouchers,
     shippingMethods,
     orders,
@@ -599,6 +704,7 @@ export function useAppState() {
     logoutUser,
     setGuestSession,
     addProduct,
+    editProduct,
     toggleProductStatus,
     updateProductStock,
     addOptionToProduct,

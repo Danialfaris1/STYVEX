@@ -43,6 +43,7 @@ interface StaffPortalProps {
   shippingMethods: ShippingMethod[];
   orders: Order[];
   addProduct: (p: Omit<Product, "id" | "status">) => void;
+  editProduct?: (p: Product) => Promise<{ success: boolean; error?: string }>;
   toggleProductStatus: (id: string) => void;
   updateProductStock: (id: string, newStock: number) => void;
   addOptionToProduct: (productId: string, option: ProductOption) => void;
@@ -72,6 +73,7 @@ export default function StaffPortal({
   shippingMethods,
   orders,
   addProduct,
+  editProduct,
   toggleProductStatus,
   updateProductStock,
   addOptionToProduct,

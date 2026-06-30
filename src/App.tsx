@@ -98,6 +98,7 @@ export default function App() {
             shippingMethods={state.shippingMethods}
             orders={state.orders}
             addProduct={state.addProduct}
+            editProduct={state.editProduct}
             toggleProductStatus={state.toggleProductStatus}
             updateProductStock={state.updateProductStock}
             addOptionToProduct={state.addOptionToProduct}
