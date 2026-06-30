@@ -509,7 +509,7 @@ export function useAppState() {
     }
   };
 
-  const registerStaffId = (id: string): { success: boolean; error?: string } => {
+  const registerStaffId = async (id: string): Promise<{ success: boolean; error?: string }> => {
     const trimmed = id.trim();
     if (!trimmed) {
       return { success: false, error: "Staff ID cannot be empty." };
@@ -520,25 +520,71 @@ export function useAppState() {
     if (staffIds.includes(trimmed)) {
       return { success: false, error: "This Staff ID is already registered." };
     }
-    const updated = [...staffIds, trimmed];
+
+    try {
+      const { error } = await supabase.from("styvex_staff_ids").insert([{ staff_id: trimmed }]);
+      if (error) throw error;
+      
+      const updated = [...staffIds, trimmed];
+      setStaffIds(updated);
+      localStorage.setItem("store_staff_ids", JSON.stringify(updated));
+      setSupabaseStatus((prev) => ({ ...prev, staffIds: "synced" }));
+      return { success: true };
+    } catch (err: any) {
+      console.error("Error registering staff ID on Supabase:", err);
+      return { success: false, error: err.message || "Failed to register Staff ID in database." };
+    }
+  };
+
+  const deleteStaffId = async (id: string): Promise<{ success: boolean; error?: string }> => {
+    const trimmed = id.trim();
+    if (trimmed === "585355") {
+      return { success: false, error: "System default Staff ID ('585355') cannot be deleted." };
+    }
+    const updated = staffIds.filter((sid) => sid !== trimmed);
     setStaffIds(updated);
     localStorage.setItem("store_staff_ids", JSON.stringify(updated));
-    
-    // Background async insert
-    (async () => {
-      try {
-        const { error } = await supabase.from("styvex_staff_ids").insert([{ staff_id: trimmed }]);
-        if (error) {
-          console.error("Failed to register staff ID on Supabase:", error);
-        } else {
-          setSupabaseStatus((prev) => ({ ...prev, staffIds: "synced" }));
-        }
-      } catch (err) {
-        console.error("Background error registering staff ID on Supabase:", err);
-      }
-    })();
 
-    return { success: true };
+    try {
+      const { error } = await supabase.from("styvex_staff_ids").delete().eq("staff_id", trimmed);
+      if (error) throw error;
+      return { success: true };
+    } catch (err: any) {
+      console.error("Failed to delete staff ID from Supabase:", err);
+      return { success: false, error: err.message || "Failed to delete from database." };
+    }
+  };
+
+  const updateStaffId = async (oldId: string, newId: string): Promise<{ success: boolean; error?: string }> => {
+    const oldTrimmed = oldId.trim();
+    const newTrimmed = newId.trim();
+
+    if (!newTrimmed) {
+      return { success: false, error: "New Staff ID cannot be empty." };
+    }
+    if (!/^\d+$/.test(newTrimmed)) {
+      return { success: false, error: "Staff ID must contain numeric digits only." };
+    }
+    if (staffIds.includes(newTrimmed) && newTrimmed !== oldTrimmed) {
+      return { success: false, error: "This Staff ID is already registered." };
+    }
+
+    // Update locally
+    const updated = staffIds.map((sid) => (sid === oldTrimmed ? newTrimmed : sid));
+    setStaffIds(updated);
+    localStorage.setItem("store_staff_ids", JSON.stringify(updated));
+
+    try {
+      const { error } = await supabase
+        .from("styvex_staff_ids")
+        .update({ staff_id: newTrimmed })
+        .eq("staff_id", oldTrimmed);
+      if (error) throw error;
+      return { success: true };
+    } catch (err: any) {
+      console.error("Failed to update staff ID in Supabase:", err);
+      return { success: false, error: err.message || "Failed to update in database." };
+    }
   };
 
   return {
@@ -567,6 +613,8 @@ export function useAppState() {
     deleteOrder,
     staffIds,
     registerStaffId,
+    deleteStaffId,
+    updateStaffId,
     // Supabase specific fields
     supabaseStatus,
     isSyncing,

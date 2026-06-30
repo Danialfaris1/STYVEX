@@ -16,6 +16,7 @@ import {
   AlertCircle,
   User as UserIcon,
   Trash2,
+  Edit2,
   Sliders,
   DollarSign,
   Package,
@@ -56,7 +57,9 @@ interface StaffPortalProps {
   authenticatedStaffId?: string;
   onLogoutStaff?: () => void;
   staffIds?: string[];
-  registerStaffId?: (id: string) => { success: boolean; error?: string };
+  registerStaffId?: (id: string) => Promise<{ success: boolean; error?: string }>;
+  deleteStaffId?: (id: string) => Promise<{ success: boolean; error?: string }>;
+  updateStaffId?: (oldId: string, newId: string) => Promise<{ success: boolean; error?: string }>;
   supabaseStatus?: Record<string, "synced" | "missing" | "error" | "loading">;
   isSyncing?: boolean;
   syncError?: string | null;
@@ -83,7 +86,9 @@ export default function StaffPortal({
   authenticatedStaffId = "",
   onLogoutStaff = () => {},
   staffIds = [],
-  registerStaffId = () => ({ success: false, error: "Not configured" }),
+  registerStaffId = async () => ({ success: false, error: "Not configured" }),
+  deleteStaffId = async () => ({ success: false, error: "Not configured" }),
+  updateStaffId = async () => ({ success: false, error: "Not configured" }),
   supabaseStatus = {},
   isSyncing = false,
   syncError = null,
@@ -99,6 +104,12 @@ export default function StaffPortal({
   const [newStaffIdInput, setNewStaffIdInput] = useState("");
   const [staffRegError, setStaffRegError] = useState("");
   const [staffRegSuccess, setStaffRegSuccess] = useState("");
+
+  // --- Staff Edit/Delete States ---
+  const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [editingStaffInput, setEditingStaffInput] = useState<string>("");
+  const [staffActionError, setStaffActionError] = useState<string | null>(null);
+  const [staffActionSuccess, setStaffActionSuccess] = useState<string | null>(null);
 
   // --- Add Product Form State ---
   const [showAddProductModal, setShowAddProductModal] = useState(false);
@@ -295,7 +306,7 @@ export default function StaffPortal({
   };
 
   // Handle Staff ID Registration Submit
-  const handleStaffRegSubmit = (e: React.FormEvent) => {
+  const handleStaffRegSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStaffRegError("");
     setStaffRegSuccess("");
@@ -306,12 +317,47 @@ export default function StaffPortal({
       return;
     }
 
-    const result = registerStaffId(trimmedId);
+    const result = await registerStaffId(trimmedId);
     if (result.success) {
       setStaffRegSuccess(`Staff ID ${trimmedId} registered successfully!`);
       setNewStaffIdInput("");
     } else {
       setStaffRegError(result.error || "Failed to register Staff ID.");
+    }
+  };
+
+  // Handle Staff ID Deletion
+  const handleStaffDelete = async (id: string) => {
+    setStaffActionError(null);
+    setStaffActionSuccess(null);
+    if (confirm(`Adakah anda pasti mahu memadam Staff ID ${id}?`)) {
+      const result = await deleteStaffId(id);
+      if (result.success) {
+        setStaffActionSuccess(`Staff ID ${id} berjaya dipadam.`);
+      } else {
+        setStaffActionError(result.error || "Gagal memadam Staff ID.");
+      }
+    }
+  };
+
+  // Handle Staff ID Edit/Update Submit
+  const handleStaffEditSubmit = async (oldId: string) => {
+    setStaffActionError(null);
+    setStaffActionSuccess(null);
+    const trimmedNewId = editingStaffInput.trim();
+
+    if (!trimmedNewId) {
+      setStaffActionError("Staff ID baru tidak boleh kosong.");
+      return;
+    }
+
+    const result = await updateStaffId(oldId, trimmedNewId);
+    if (result.success) {
+      setStaffActionSuccess(`Staff ID ${oldId} berjaya ditukar kepada ${trimmedNewId}.`);
+      setEditingStaffId(null);
+      setEditingStaffInput("");
+    } else {
+      setStaffActionError(result.error || "Gagal mengemas kini Staff ID.");
     }
   };
 
@@ -1048,37 +1094,108 @@ export default function StaffPortal({
                 <p className="text-natural-muted text-xs">A comprehensive list of numeric Staff IDs that are authorized to access the live console.</p>
               </div>
 
+              {staffActionError && (
+                <div className="p-4 bg-terracotta/5 border-b border-terracotta/15 text-terracotta text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{staffActionError}</span>
+                </div>
+              )}
+              {staffActionSuccess && (
+                <div className="p-4 bg-sage/5 border-b border-sage/15 text-sage text-xs font-semibold flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 shrink-0" />
+                  <span>{staffActionSuccess}</span>
+                </div>
+              )}
+
               <div className="divide-y divide-natural-border text-xs">
                 {staffIds.map((id) => {
                   const isDefault = id === "585355";
                   const isActive = id === authenticatedStaffId;
+                  const isEditing = editingStaffId === id;
+
                   return (
-                    <div key={id} className="p-4 flex items-center justify-between hover:bg-natural-secondary/15 transition-colors">
-                      <div className="flex items-center space-x-3">
-                        <div className="bg-natural-secondary p-2.5 rounded-xl border border-natural-border text-brand">
-                          <Users className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <span className="font-mono font-black text-natural-text text-sm tracking-wider">Operator ID: {id}</span>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {isDefault && (
-                              <span className="bg-brand/5 text-brand border border-brand/15 text-[9px] font-bold px-2 py-0.5 rounded-md">
-                                System Default ID
-                              </span>
-                            )}
-                            {isActive && (
-                              <span className="bg-sage/15 text-sage border border-sage/20 text-[9px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
-                                <span className="h-1 w-1 bg-sage rounded-full animate-pulse"></span>
-                                Currently Logged In
-                              </span>
-                            )}
+                    <div key={id} className="p-4 flex items-center justify-between hover:bg-natural-secondary/15 transition-colors gap-4">
+                      {isEditing ? (
+                        <div className="flex items-center gap-3 w-full">
+                          <div className="bg-natural-secondary p-2.5 rounded-xl border border-natural-border text-brand">
+                            <Users className="h-4 w-4" />
+                          </div>
+                          <div className="flex flex-1 items-center gap-2 max-w-sm">
+                            <input
+                              type="text"
+                              required
+                              pattern="\d*"
+                              value={editingStaffInput}
+                              onChange={(e) => setEditingStaffInput(e.target.value.replace(/\D/g, ""))}
+                              className="w-full px-3 py-1.5 rounded-lg bg-natural-secondary border border-natural-border text-xs focus:ring-1 focus:ring-brand focus:bg-white text-natural-text font-mono tracking-wider transition-all"
+                              placeholder="Staff ID Baru"
+                            />
+                            <button
+                              onClick={() => handleStaffEditSubmit(id)}
+                              className="px-3 py-1.5 bg-brand hover:bg-brand-hover text-white text-[10px] font-bold rounded-lg cursor-pointer shadow-xs transition-all"
+                            >
+                              Simpan
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingStaffId(null);
+                                setEditingStaffInput("");
+                                setStaffActionError(null);
+                              }}
+                              className="px-3 py-1.5 bg-natural-secondary hover:bg-natural-secondary-hover border border-natural-border text-[10px] font-medium rounded-lg text-natural-text cursor-pointer transition-all"
+                            >
+                              Batal
+                            </button>
                           </div>
                         </div>
-                      </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center space-x-3">
+                            <div className="bg-natural-secondary p-2.5 rounded-xl border border-natural-border text-brand">
+                              <Users className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <span className="font-mono font-black text-natural-text text-sm tracking-wider">Operator ID: {id}</span>
+                              <div className="flex flex-wrap gap-1.5 mt-1">
+                                {isDefault && (
+                                  <span className="bg-brand/5 text-brand border border-brand/15 text-[9px] font-bold px-2 py-0.5 rounded-md">
+                                    System Default ID
+                                  </span>
+                                )}
+                                {isActive && (
+                                  <span className="bg-sage/15 text-sage border border-sage/20 text-[9px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
+                                    <span className="h-1 w-1 bg-sage rounded-full animate-pulse"></span>
+                                    Currently Logged In
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
 
-                      <div className="text-right text-natural-muted text-[10px]">
-                        Authorized
-                      </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => {
+                                setEditingStaffId(id);
+                                setEditingStaffInput(id);
+                                setStaffActionError(null);
+                                setStaffActionSuccess(null);
+                              }}
+                              className="p-1.5 text-natural-muted hover:text-brand hover:bg-natural-secondary rounded-lg transition-all cursor-pointer"
+                              title="Kemaskini Operator ID"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleStaffDelete(id)}
+                              disabled={isDefault || isActive}
+                              className="p-1.5 text-natural-muted hover:text-terracotta hover:bg-natural-secondary disabled:opacity-30 disabled:hover:text-natural-muted disabled:hover:bg-transparent rounded-lg transition-all cursor-pointer"
+                              title={isDefault ? "Default ID tidak boleh dipadam" : isActive ? "Anda tidak boleh padam ID yang sedang log masuk" : "Padam Operator ID"}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })}

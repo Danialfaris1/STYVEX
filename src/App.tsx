@@ -113,6 +113,8 @@ export default function App() {
             onLogoutStaff={() => setAuthenticatedStaffId(null)}
             staffIds={state.staffIds}
             registerStaffId={state.registerStaffId}
+            deleteStaffId={state.deleteStaffId}
+            updateStaffId={state.updateStaffId}
             supabaseStatus={state.supabaseStatus}
             isSyncing={state.isSyncing}
             syncError={state.syncError}

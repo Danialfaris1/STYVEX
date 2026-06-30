@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "motion/react";
 interface StaffAuthGateProps {
   staffIds: string[];
   onAuthenticate: (staffId: string) => void;
-  onRegisterStaffId: (staffId: string) => { success: boolean; error?: string };
+  onRegisterStaffId: (staffId: string) => Promise<{ success: boolean; error?: string }>;
   onBackToCustomer: () => void;
 }
 
