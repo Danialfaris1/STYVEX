@@ -110,6 +110,17 @@ alter table styvex_cart disable row level security;
 
 -- Insert Default Staff ID
 insert into styvex_staff_ids (staff_id) values ('585355') on conflict (staff_id) do nothing;
+
+-- 8. Enable Realtime postgres_changes replication for tables (Highly Recommended for Realtime Screen Syncing)
+-- Run these to allow Supabase to push updates instantly to phones and computers.
+-- (If any table is already in the publication, you can run them individually or ignore "already exists" warnings)
+alter publication supabase_realtime add table styvex_products;
+alter publication supabase_realtime add table styvex_vouchers;
+alter publication supabase_realtime add table styvex_shipping_methods;
+alter publication supabase_realtime add table styvex_orders;
+alter publication supabase_realtime add table styvex_users;
+alter publication supabase_realtime add table styvex_staff_ids;
+alter publication supabase_realtime add table styvex_cart;
 `;
 
 // --- DB Mapping Helpers ---

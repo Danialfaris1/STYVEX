@@ -39,7 +39,7 @@ interface CustomerPortalProps {
   loginUser: (username: string, password?: string) => { success: boolean; error?: string };
   logoutUser: () => void;
   setGuestSession: (name: string) => void;
-  createOrder: (order: Omit<Order, "id" | "customerCode" | "createdAt" | "status">) => Order;
+  createOrder: (order: Omit<Order, "id" | "customerCode" | "createdAt" | "status">) => Promise<Order>;
 }
 
 const getSessionId = (): string => {
@@ -449,7 +449,7 @@ export default function CustomerPortal({
       shippingMethodName: selectedShipping.name
     };
 
-    const finalOrder = createOrder(orderData);
+    const finalOrder = await createOrder(orderData);
     setLastPlacedOrder(finalOrder);
     setCart([]);
 

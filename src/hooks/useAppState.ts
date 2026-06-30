@@ -55,13 +55,12 @@ export function useAppState() {
         setSupabaseStatus((prev) => ({ ...prev, products: "synced" }));
         return mapped;
       } else {
-        const localProducts = localStorage.getItem("store_products")
-          ? JSON.parse(localStorage.getItem("store_products")!)
-          : INITIAL_PRODUCTS;
-        setProducts(localProducts);
-        await supabase.from("styvex_products").upsert(localProducts.map(mapProductToDB));
+        // If the database is completely empty, use INITIAL_PRODUCTS as a fallback in state,
+        // but DO NOT automatically upsert them to Supabase from a customer client.
+        setProducts(INITIAL_PRODUCTS);
+        localStorage.setItem("store_products", JSON.stringify(INITIAL_PRODUCTS));
         setSupabaseStatus((prev) => ({ ...prev, products: "synced" }));
-        return localProducts;
+        return INITIAL_PRODUCTS;
       }
     } catch (err: any) {
       console.warn("Supabase products fetch failed:", err);
@@ -88,13 +87,10 @@ export function useAppState() {
         setSupabaseStatus((prev) => ({ ...prev, vouchers: "synced" }));
         return mapped;
       } else {
-        const local = localStorage.getItem("store_vouchers")
-          ? JSON.parse(localStorage.getItem("store_vouchers")!)
-          : INITIAL_VOUCHERS;
-        setVouchers(local);
-        await supabase.from("styvex_vouchers").upsert(local.map(mapVoucherToDB));
+        setVouchers(INITIAL_VOUCHERS);
+        localStorage.setItem("store_vouchers", JSON.stringify(INITIAL_VOUCHERS));
         setSupabaseStatus((prev) => ({ ...prev, vouchers: "synced" }));
-        return local;
+        return INITIAL_VOUCHERS;
       }
     } catch (err: any) {
       console.warn("Supabase vouchers fetch failed:", err);
@@ -121,13 +117,10 @@ export function useAppState() {
         setSupabaseStatus((prev) => ({ ...prev, shippingMethods: "synced" }));
         return mapped;
       } else {
-        const local = localStorage.getItem("store_shipping")
-          ? JSON.parse(localStorage.getItem("store_shipping")!)
-          : INITIAL_SHIPPING;
-        setShippingMethods(local);
-        await supabase.from("styvex_shipping_methods").upsert(local.map(mapShippingToDB));
+        setShippingMethods(INITIAL_SHIPPING);
+        localStorage.setItem("store_shipping", JSON.stringify(INITIAL_SHIPPING));
         setSupabaseStatus((prev) => ({ ...prev, shippingMethods: "synced" }));
-        return local;
+        return INITIAL_SHIPPING;
       }
     } catch (err: any) {
       console.warn("Supabase shipping fetch failed:", err);
@@ -147,7 +140,7 @@ export function useAppState() {
     try {
       const { data, error } = await supabase.from("styvex_orders").select("*");
       if (error) throw error;
-      if (data && data.length > 0) {
+      if (data) {
         const mapped = data.map(mapOrderFromDB);
         mapped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setOrders(mapped);
@@ -155,11 +148,9 @@ export function useAppState() {
         setSupabaseStatus((prev) => ({ ...prev, orders: "synced" }));
         return mapped;
       } else {
-        const stored = localStorage.getItem("store_orders");
-        const loaded = stored ? JSON.parse(stored) : [];
-        setOrders(loaded);
+        setOrders([]);
         setSupabaseStatus((prev) => ({ ...prev, orders: "synced" }));
-        return loaded;
+        return [];
       }
     } catch (err: any) {
       console.warn("Supabase orders fetch failed:", err);
@@ -179,18 +170,16 @@ export function useAppState() {
     try {
       const { data, error } = await supabase.from("styvex_users").select("*");
       if (error) throw error;
-      if (data && data.length > 0) {
+      if (data) {
         const mapped = data.map(mapUserFromDB);
         setUsers(mapped);
         localStorage.setItem("store_users", JSON.stringify(mapped));
         setSupabaseStatus((prev) => ({ ...prev, users: "synced" }));
         return mapped;
       } else {
-        const stored = localStorage.getItem("store_users");
-        const loaded = stored ? JSON.parse(stored) : [];
-        setUsers(loaded);
+        setUsers([]);
         setSupabaseStatus((prev) => ({ ...prev, users: "synced" }));
-        return loaded;
+        return [];
       }
     } catch (err: any) {
       console.warn("Supabase users fetch failed:", err);
@@ -220,7 +209,6 @@ export function useAppState() {
         const defaultIds = ["585355"];
         setStaffIds(defaultIds);
         localStorage.setItem("store_staff_ids", JSON.stringify(defaultIds));
-        await supabase.from("styvex_staff_ids").upsert([{ staff_id: "585355" }]);
         setSupabaseStatus((prev) => ({ ...prev, staffIds: "synced" }));
         return defaultIds;
       }
@@ -655,7 +643,7 @@ export function useAppState() {
   };
 
   // --- Customer: Order Checkout Actions ---
-  const createOrder = (orderData: Omit<Order, "id" | "customerCode" | "createdAt" | "status">): Order => {
+  const createOrder = async (orderData: Omit<Order, "id" | "customerCode" | "createdAt" | "status">): Promise<Order> => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let randomPart = "";
     for (let i = 0; i < 4; i++) {
@@ -671,27 +659,39 @@ export function useAppState() {
       status: "pending"
     };
 
-    // Deduct stock for products bought (run individually on Supabase instead of upserting entire array)
-    (async () => {
-      try {
-        for (const item of orderData.items) {
-          const prod = products.find((p) => p.id === item.productId);
-          if (prod) {
-            const newStock = Math.max(0, prod.stock - item.quantity);
-            await supabase.from("styvex_products").update({ stock: newStock }).eq("id", prod.id);
-          }
-        }
-        await getProducts();
-      } catch (err) {
-        console.error("Failed to deduct stock for created order items:", err);
-      }
-    })();
+    // 1. Update local state and localStorage
+    const updatedOrders = [newOrder, ...orders];
+    setOrders(updatedOrders);
+    localStorage.setItem("store_orders", JSON.stringify(updatedOrders));
 
-    saveOrders([newOrder, ...orders]); // newest first
+    // 2. Direct insert of this single order in Supabase
+    try {
+      const dbRow = mapOrderToDB(newOrder);
+      const { error } = await supabase.from("styvex_orders").insert([dbRow]);
+      if (error) throw error;
+      setSupabaseStatus((prev) => ({ ...prev, orders: "synced" }));
+    } catch (err) {
+      console.error("Failed to save new order to Supabase:", err);
+    }
+
+    // Deduct stock for products bought (run individually on Supabase instead of upserting entire array)
+    try {
+      for (const item of orderData.items) {
+        const prod = products.find((p) => p.id === item.productId);
+        if (prod) {
+          const newStock = Math.max(0, prod.stock - item.quantity);
+          await supabase.from("styvex_products").update({ stock: newStock }).eq("id", prod.id);
+        }
+      }
+      await getProducts();
+    } catch (err) {
+      console.error("Failed to deduct stock for created order items:", err);
+    }
+
     return newOrder;
   };
 
-  const updateOrderStatus = (orderId: string, status: Order["status"]) => {
+  const updateOrderStatus = async (orderId: string, status: Order["status"]) => {
     const updated = orders.map((o) => {
       if (o.id === orderId) {
         if (status === "cancelled" && o.status !== "cancelled") {
@@ -715,7 +715,20 @@ export function useAppState() {
       }
       return o;
     });
-    saveOrders(updated);
+    setOrders(updated);
+    localStorage.setItem("store_orders", JSON.stringify(updated));
+
+    // Update only this single order row's status in Supabase
+    try {
+      const { error } = await supabase
+        .from("styvex_orders")
+        .update({ status })
+        .eq("id", orderId);
+      if (error) throw error;
+      setSupabaseStatus((prev) => ({ ...prev, orders: "synced" }));
+    } catch (err) {
+      console.error("Failed to update order status in Supabase:", err);
+    }
   };
 
   const deleteOrder = async (orderId: string) => {
