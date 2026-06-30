@@ -174,22 +174,32 @@ export function mapVoucherFromDB(db: any): Voucher {
 }
 
 export function mapShippingToDB(s: ShippingMethod) {
+  if (!s) return {};
   return {
-    id: s.id,
-    name: s.name,
-    price: s.price,
-    estimated_days: s.estimatedDays,
-    is_active: s.isActive,
+    id: s.id || `ship-${Math.random().toString(36).substr(2, 9)}`,
+    name: s.name || "Unnamed Shipping",
+    price: typeof s.price === "number" ? s.price : Number(s.price) || 0,
+    estimated_days: s.estimatedDays || (s as any).estimated_days || "3-5 Business Days",
+    is_active: typeof s.isActive === "boolean" ? s.isActive : (typeof (s as any).is_active === "boolean" ? (s as any).is_active : true),
   };
 }
 
 export function mapShippingFromDB(db: any): ShippingMethod {
+  if (!db) {
+    return {
+      id: `ship-${Math.random().toString(36).substr(2, 9)}`,
+      name: "Unnamed Shipping",
+      price: 0,
+      estimatedDays: "3-5 Business Days",
+      isActive: true,
+    };
+  }
   return {
     id: db.id,
-    name: db.name,
-    price: Number(db.price),
-    estimatedDays: db.estimated_days,
-    isActive: Boolean(db.is_active),
+    name: db.name || "Unnamed Shipping",
+    price: typeof db.price === "number" ? db.price : Number(db.price) || 0,
+    estimatedDays: db.estimated_days || db.estimatedDays || "3-5 Business Days",
+    isActive: typeof db.is_active === "boolean" ? db.is_active : (typeof db.isActive === "boolean" ? db.isActive : true),
   };
 }
 

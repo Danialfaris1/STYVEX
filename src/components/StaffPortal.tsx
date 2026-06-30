@@ -67,6 +67,49 @@ interface StaffPortalProps {
   syncFromSupabase?: () => Promise<void>;
 }
 
+interface StockInputProps {
+  productId: string;
+  initialStock: number;
+  onUpdate: (productId: string, stock: number) => void;
+}
+
+function StockInput({ productId, initialStock, onUpdate }: StockInputProps) {
+  const [value, setValue] = React.useState(initialStock.toString());
+
+  // Kemas kini nilai lokal sekiranya ada perubahan real-time dari peranti lain
+  React.useEffect(() => {
+    setValue(initialStock.toString());
+  }, [initialStock]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setValue(val);
+    const parsed = parseInt(val, 10);
+    if (!isNaN(parsed) && parsed >= 0) {
+      onUpdate(productId, parsed);
+    }
+  };
+
+  const handleBlur = () => {
+    const parsed = parseInt(value, 10);
+    if (isNaN(parsed) || parsed < 0) {
+      setValue(initialStock.toString()); // Pulihkan jika tidak sah atau kosong
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      min="0"
+      className="w-16 px-2 py-1 bg-white text-center font-mono font-bold text-natural-text rounded border border-natural-border focus:outline-none focus:ring-1 focus:ring-brand"
+      value={value}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+    />
+  );
+}
+
 export default function StaffPortal({
   products,
   vouchers,
@@ -739,12 +782,10 @@ export default function StaffPortal({
                           >
                             <Minus className="h-3 w-3" />
                           </button>
-                          <input
-                            type="number"
-                            min="0"
-                            value={prod.stock}
-                            onChange={(e) => updateProductStock(prod.id, parseInt(e.target.value, 10) || 0)}
-                            className="w-14 bg-white text-center font-mono font-bold text-natural-text rounded py-1 px-1 border border-natural-border focus:outline-none focus:ring-1 focus:ring-brand"
+                          <StockInput
+                            productId={prod.id}
+                            initialStock={prod.stock}
+                            onUpdate={updateProductStock}
                           />
                           <button
                             title="Add Stock"

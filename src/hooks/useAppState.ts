@@ -52,15 +52,16 @@ export function useAppState() {
         const mapped = data.map(mapProductFromDB);
         setProducts(mapped);
         localStorage.setItem("store_products", JSON.stringify(mapped));
+        localStorage.setItem("styvex_products_initialized", "true");
         setSupabaseStatus((prev) => ({ ...prev, products: "synced" }));
         return mapped;
       } else {
-        // If the database is completely empty, use INITIAL_PRODUCTS as a fallback in state,
-        // but DO NOT automatically upsert them to Supabase from a customer client.
-        setProducts(INITIAL_PRODUCTS);
-        localStorage.setItem("store_products", JSON.stringify(INITIAL_PRODUCTS));
+        const isInitialized = localStorage.getItem("styvex_products_initialized") === "true";
+        const finalProducts = isInitialized ? [] : INITIAL_PRODUCTS;
+        setProducts(finalProducts);
+        localStorage.setItem("store_products", JSON.stringify(finalProducts));
         setSupabaseStatus((prev) => ({ ...prev, products: "synced" }));
-        return INITIAL_PRODUCTS;
+        return finalProducts;
       }
     } catch (err: any) {
       console.warn("Supabase products fetch failed:", err);
@@ -84,13 +85,16 @@ export function useAppState() {
         const mapped = data.map(mapVoucherFromDB);
         setVouchers(mapped);
         localStorage.setItem("store_vouchers", JSON.stringify(mapped));
+        localStorage.setItem("styvex_vouchers_initialized", "true");
         setSupabaseStatus((prev) => ({ ...prev, vouchers: "synced" }));
         return mapped;
       } else {
-        setVouchers(INITIAL_VOUCHERS);
-        localStorage.setItem("store_vouchers", JSON.stringify(INITIAL_VOUCHERS));
+        const isInitialized = localStorage.getItem("styvex_vouchers_initialized") === "true";
+        const finalVouchers = isInitialized ? [] : INITIAL_VOUCHERS;
+        setVouchers(finalVouchers);
+        localStorage.setItem("store_vouchers", JSON.stringify(finalVouchers));
         setSupabaseStatus((prev) => ({ ...prev, vouchers: "synced" }));
-        return INITIAL_VOUCHERS;
+        return finalVouchers;
       }
     } catch (err: any) {
       console.warn("Supabase vouchers fetch failed:", err);
@@ -114,13 +118,16 @@ export function useAppState() {
         const mapped = data.map(mapShippingFromDB);
         setShippingMethods(mapped);
         localStorage.setItem("store_shipping", JSON.stringify(mapped));
+        localStorage.setItem("styvex_shipping_initialized", "true");
         setSupabaseStatus((prev) => ({ ...prev, shippingMethods: "synced" }));
         return mapped;
       } else {
-        setShippingMethods(INITIAL_SHIPPING);
-        localStorage.setItem("store_shipping", JSON.stringify(INITIAL_SHIPPING));
+        const isInitialized = localStorage.getItem("styvex_shipping_initialized") === "true";
+        const finalShipping = isInitialized ? [] : INITIAL_SHIPPING;
+        setShippingMethods(finalShipping);
+        localStorage.setItem("store_shipping", JSON.stringify(finalShipping));
         setSupabaseStatus((prev) => ({ ...prev, shippingMethods: "synced" }));
-        return INITIAL_SHIPPING;
+        return finalShipping;
       }
     } catch (err: any) {
       console.warn("Supabase shipping fetch failed:", err);
@@ -341,9 +348,11 @@ export function useAppState() {
     setProducts(updated);
     localStorage.setItem("store_products", JSON.stringify(updated));
     try {
-      const mapped = updated.map(mapProductToDB);
-      const { error } = await supabase.from("styvex_products").upsert(mapped);
-      if (error) throw error;
+      const mapped = updated.map(mapProductToDB).filter((item: any) => item && item.id);
+      if (mapped.length > 0) {
+        const { error } = await supabase.from("styvex_products").upsert(mapped);
+        if (error) throw error;
+      }
       setSupabaseStatus((prev) => ({ ...prev, products: "synced" }));
     } catch (err) {
       console.error("Failed to save products to Supabase:", err);
@@ -354,9 +363,11 @@ export function useAppState() {
     setVouchers(updated);
     localStorage.setItem("store_vouchers", JSON.stringify(updated));
     try {
-      const mapped = updated.map(mapVoucherToDB);
-      const { error } = await supabase.from("styvex_vouchers").upsert(mapped);
-      if (error) throw error;
+      const mapped = updated.map(mapVoucherToDB).filter((item: any) => item && item.id);
+      if (mapped.length > 0) {
+        const { error } = await supabase.from("styvex_vouchers").upsert(mapped);
+        if (error) throw error;
+      }
       setSupabaseStatus((prev) => ({ ...prev, vouchers: "synced" }));
     } catch (err) {
       console.error("Failed to save vouchers to Supabase:", err);
@@ -367,9 +378,11 @@ export function useAppState() {
     setShippingMethods(updated);
     localStorage.setItem("store_shipping", JSON.stringify(updated));
     try {
-      const mapped = updated.map(mapShippingToDB);
-      const { error } = await supabase.from("styvex_shipping_methods").upsert(mapped);
-      if (error) throw error;
+      const mapped = updated.map(mapShippingToDB).filter((item: any) => item && item.id);
+      if (mapped.length > 0) {
+        const { error } = await supabase.from("styvex_shipping_methods").upsert(mapped);
+        if (error) throw error;
+      }
       setSupabaseStatus((prev) => ({ ...prev, shippingMethods: "synced" }));
     } catch (err) {
       console.error("Failed to save shipping methods to Supabase:", err);
@@ -380,9 +393,11 @@ export function useAppState() {
     setOrders(updated);
     localStorage.setItem("store_orders", JSON.stringify(updated));
     try {
-      const mapped = updated.map(mapOrderToDB);
-      const { error } = await supabase.from("styvex_orders").upsert(mapped);
-      if (error) throw error;
+      const mapped = updated.map(mapOrderToDB).filter((item: any) => item && item.id);
+      if (mapped.length > 0) {
+        const { error } = await supabase.from("styvex_orders").upsert(mapped);
+        if (error) throw error;
+      }
       setSupabaseStatus((prev) => ({ ...prev, orders: "synced" }));
     } catch (err) {
       console.error("Failed to save orders to Supabase:", err);
@@ -399,9 +414,11 @@ export function useAppState() {
       localStorage.removeItem("store_current_user");
     }
     try {
-      const mapped = updatedUsers.map(mapUserToDB);
-      const { error } = await supabase.from("styvex_users").upsert(mapped);
-      if (error) throw error;
+      const mapped = updatedUsers.map(mapUserToDB).filter((item: any) => item && item.id);
+      if (mapped.length > 0) {
+        const { error } = await supabase.from("styvex_users").upsert(mapped);
+        if (error) throw error;
+      }
       setSupabaseStatus((prev) => ({ ...prev, users: "synced" }));
     } catch (err) {
       console.error("Failed to save users to Supabase:", err);
@@ -468,21 +485,33 @@ export function useAppState() {
     };
 
     try {
+      if (supabaseStatus.products === "missing") {
+        throw new Error("Table 'styvex_products' does not exist (fallback to localStorage)");
+      }
       const { error } = await supabase.from("styvex_products").insert([mapProductToDB(newProduct)]);
       if (error) throw error;
       await getProducts();
       return { success: true };
     } catch (err: any) {
-      console.error("Failed to add product to Supabase:", err);
+      const isMissing = err.code === "42P01" || err.message?.includes("does not exist") || err.message?.includes("42P01");
+      if (isMissing) {
+        setSupabaseStatus((prev) => ({ ...prev, products: "missing" }));
+        console.warn("Table 'styvex_products' does not exist on Supabase, saving locally instead.");
+      } else {
+        console.warn("Failed to add product to Supabase, saving locally instead:", err);
+      }
       const updated = [...products, newProduct];
       setProducts(updated);
       localStorage.setItem("store_products", JSON.stringify(updated));
-      return { success: false, error: err.message || "Failed to add product." };
+      return { success: true };
     }
   };
 
   const editProduct = async (updatedProduct: Product): Promise<{ success: boolean; error?: string }> => {
     try {
+      if (supabaseStatus.products === "missing") {
+        throw new Error("Table 'styvex_products' does not exist (fallback to localStorage)");
+      }
       const { error } = await supabase
         .from("styvex_products")
         .update(mapProductToDB(updatedProduct))
@@ -491,11 +520,17 @@ export function useAppState() {
       await getProducts();
       return { success: true };
     } catch (err: any) {
-      console.error("Failed to edit product on Supabase:", err);
+      const isMissing = err.code === "42P01" || err.message?.includes("does not exist") || err.message?.includes("42P01");
+      if (isMissing) {
+        setSupabaseStatus((prev) => ({ ...prev, products: "missing" }));
+        console.warn("Table 'styvex_products' does not exist on Supabase, updated locally instead.");
+      } else {
+        console.warn("Failed to edit product on Supabase, updated locally instead:", err);
+      }
       const updated = products.map((p) => (p.id === updatedProduct.id ? updatedProduct : p));
       setProducts(updated);
       localStorage.setItem("store_products", JSON.stringify(updated));
-      return { success: false, error: err.message || "Failed to edit product." };
+      return { success: true };
     }
   };
 
@@ -510,27 +545,73 @@ export function useAppState() {
     localStorage.setItem("store_products", JSON.stringify(updatedList));
 
     try {
+      if (supabaseStatus.products === "missing") {
+        throw new Error("Table 'styvex_products' does not exist (fallback to localStorage)");
+      }
       const { error } = await supabase
         .from("styvex_products")
         .update({ status: updatedStatus })
         .eq("id", productId);
       if (error) throw error;
       await getProducts();
-    } catch (err) {
-      console.error("Failed to toggle product status on Supabase:", err);
+    } catch (err: any) {
+      const isMissing = err.code === "42P01" || err.message?.includes("does not exist") || err.message?.includes("42P01");
+      if (isMissing) {
+        setSupabaseStatus((prev) => ({ ...prev, products: "missing" }));
+        console.warn("Table 'styvex_products' does not exist on Supabase, updated status locally instead.");
+      } else {
+        console.error("Failed to toggle product status on Supabase:", err);
+      }
     }
   };
 
   const deleteProduct = async (productId: string) => {
-    const updated = products.filter((p) => p.id !== productId);
-    setProducts(updated);
-    localStorage.setItem("store_products", JSON.stringify(updated));
+    // Set penanda inisialisasi di awal agar sistem tahu ini adalah pemadaman sengaja
+    // dan bukan masalah pangkalan data kosong yang memerlukan data acuan (fallback)
+    localStorage.setItem("styvex_products_initialized", "true");
+
     try {
-      const { error } = await supabase.from("styvex_products").delete().eq("id", productId);
+      if (supabaseStatus.products === "missing") {
+        throw new Error("Table 'styvex_products' does not exist (fallback to localStorage)");
+      }
+      // Non-blocking cart cleanup
+      try {
+        await supabase.from("styvex_cart").delete().eq("product_id", productId);
+      } catch (cartErr) {
+        console.warn("Non-blocking: could not delete product from styvex_cart:", cartErr);
+      }
+
+      // 1. Hantar arahan delete secara terus ke pangkalan data Supabase
+      const { error } = await supabase
+        .from("styvex_products")
+        .delete()
+        .eq("id", productId);
+
       if (error) throw error;
-      await getProducts();
-    } catch (err) {
-      console.error("Failed to delete product from Supabase:", err);
+
+      // 2. Kemas kini state tempatan serta-merta selepas operasi pangkalan data berjaya
+      setProducts((prevProducts) => {
+        const updated = prevProducts.filter((p) => p.id !== productId);
+        localStorage.setItem("store_products", JSON.stringify(updated));
+        return updated;
+      });
+
+      return { success: true };
+    } catch (err: any) {
+      const isMissing = err.code === "42P01" || err.message?.includes("does not exist") || err.message?.includes("42P01");
+      if (isMissing) {
+        setSupabaseStatus((prev) => ({ ...prev, products: "missing" }));
+        console.warn("Table 'styvex_products' does not exist on Supabase, deleted locally instead.");
+        setProducts((prevProducts) => {
+          const updated = prevProducts.filter((p) => p.id !== productId);
+          localStorage.setItem("store_products", JSON.stringify(updated));
+          return updated;
+        });
+        return { success: true };
+      } else {
+        console.error("Ralat semasa memadam produk:", err);
+        return { success: false, error: err };
+      }
     }
   };
 
